@@ -88,8 +88,28 @@ src_unpack() {
 }
 
 src_prepare() {
-	echo "# Remove files that shall not be installed from this list." > ${PN}.conf
-	find * \( \! -type d -and \! -name ${PN}.conf \) >> ${PN}.conf
+	local kernel_mods="${ROOT}/lib/modules/${KV_FULL}"
+
+	# Fail if any firmware is missing.
+	einfo "Scanning for files required by ${KV_FULL}"
+	echo -n > "${T}/firmware-scan"
+	local kofile fwfile failed
+	for kofile in $(find "${kernel_mods}" -name '*.ko'); do
+		for fwfile in $(modinfo --field firmware "${kofile}"); do
+			if [[ ! -e "${fwfile}" ]]; then
+				eerror "Missing firmware: ${fwfile} (${kofile##*/})"
+				failed=1
+			elif [[ -L "${fwfile}" ]]; then
+				echo "${fwfile}" >> "${T}/firmware-scan"
+				realpath --relative-to=. "${fwfile}" >> "${T}/firmware-scan"
+			else
+				echo "${fwfile}" >> "${T}/firmware-scan"
+			fi
+		done
+	done
+	if [[ -n "${failed}" ]]; then
+		die "Missing firmware"
+	fi
 
 	if use savedconfig; then
 		restore_config ${PN}.conf
